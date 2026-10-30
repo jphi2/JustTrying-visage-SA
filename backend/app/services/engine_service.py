@@ -1,12 +1,13 @@
-﻿"""Bridge between FastAPI and the standalone Visage engine."""
+"""Bridge between FastAPI and the standalone Visage engine."""
 
 import sys
 import threading
 
+from app.core.config import settings
+from app.core.cuda import initialize_cuda, cuda_status
 from app.core.paths import (
     ENGINE_DIR,
     ENGINE_PACKAGE,
-    MODELS_DIR,
     create_directories,
 )
 
@@ -37,15 +38,40 @@ def initialize_engine():
         if engine_path not in sys.path:
             sys.path.insert(0, engine_path)
 
-        from lib_visage import models, runtime
+        # Prepare CUDA/cuDNN before importing or creating any ONNX sessions.
+        # Explicit "cuda" / "tensorrt" requests fail fast instead of silently
+        # falling back to CPU. "auto" may fall back when CUDA is unavailable.
+        if settings.device == "cpu" or (settings.device == "auto" and not settings.prefer_gpu):
+            gpu_status = {
+                "initialized": False,
+                "cuda_available": False,
+                "preload_error": "GPU désactivé par la configuration.",
+            }
+        else:
+            required_provider = {
+                "cuda": "CUDAExecutionProvider",
+                "tensorrt": "TensorrtExecutionProvider",
+            }.get(settings.device)
+            gpu_status = initialize_cuda(
+                required_provider=required_provider,
+            )
 
-        # Centralize model storage inside AI_Visage.
-        models.set_models_dir(str(MODELS_DIR))
+        from lib_visage import analysis, facemodel, models, pipeline, runtime
+
+        runtime.configure_provider(settings.device, settings.prefer_gpu)
+
+        # Use the existing ONNX model directory from .env. Model files are
+        # shared in place; the standalone app does not copy or relocate them.
+        models.set_models_dir(settings.onnx_models_dir)
 
         _engine = {
             "models": models,
             "runtime": runtime,
+            "analysis": analysis,
+            "facemodel": facemodel,
+            "pipeline": pipeline,
             "package": "lib_visage",
+            "cuda": gpu_status,
         }
 
         return _engine
@@ -68,6 +94,7 @@ def engine_status():
     runtime = engine["runtime"]
 
     providers = runtime.available_providers()
+    cuda = cuda_status()
 
     try:
         active = runtime.active_provider()
@@ -83,5 +110,12 @@ def engine_status():
         "available_providers": providers,
         "active_provider": active,
         "provider_error": provider_error,
-        "models_directory": str(MODELS_DIR),
+        "requested_device": settings.device,
+        "prefer_gpu": settings.prefer_gpu,
+        "cuda": engine.get("cuda", cuda),
+        "loaded_sessions": runtime.loaded_session_status(),
+        "models_directory": settings.onnx_models_dir,
+        "native_face_models_directory": settings.native_face_models_dir,
+        "reactor_face_models_directory": settings.reactor_face_models_dir,
+        "shared_models_root": settings.shared_models_root,
     }

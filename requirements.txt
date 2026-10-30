@@ -15,3 +15,6 @@ python-multipart
 
 # Configuration
 python-dotenv
+
+# Face identity model serialization
+safetensors>=0.6

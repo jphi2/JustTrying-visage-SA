@@ -1,120 +1,83 @@
+"""Real ONNX GPU diagnostic using the project's root-level Python install.
+
+Run from the repository root:
+    .\\python\\python.exe tests\\test_onnx_gpu.py
+
+The test does not download models. It requires the existing RetinaFace model
+at VISAGE_ONNX_MODELS_DIR/detection/retinaface_10g.onnx.
+"""
+
+from __future__ import annotations
 
 import os
-import ctypes
+import sys
 from pathlib import Path
 
-import numpy as np
-import onnxruntime as ort
-
-# ============================================================
-# AI_VISAGE - Diagnostic CUDA / ONNX Runtime
-# ============================================================
-
 ROOT = Path(__file__).resolve().parents[1]
-SITE = ROOT / "python" / "venv" / "Lib" / "site-packages"
-NVIDIA = SITE / "nvidia"
+BACKEND = ROOT / "backend"
+sys.path.insert(0, str(BACKEND))
 
-MODEL = Path(
-    r"C:\Users\jpp\sd-webui-forge-neo\models\visage"
-    r"\detection\retinaface_10g.onnx"
-)
+from app.core.paths import ONNX_MODELS_DIR  # noqa: E402
+from app.core.cuda import initialize_cuda  # noqa: E402
 
-print("=" * 60)
-print(" AI_VISAGE - DIAGNOSTIC CUDA")
-print("=" * 60)
+ENGINE_DIR = ROOT / "visage"
+sys.path.insert(0, str(ENGINE_DIR))
 
-if not MODEL.is_file():
-    raise FileNotFoundError(MODEL)
+from lib_visage import models, runtime  # noqa: E402
 
-# 1. Enregistrer les repertoires DLL
-DLL_HANDLES = []
 
-for directory in NVIDIA.rglob("bin"):
-    for dll_dir in directory.rglob("*"):
-        if dll_dir.is_dir():
-            DLL_HANDLES.append(os.add_dll_directory(str(dll_dir)))
+def main() -> None:
+    model_path = Path(ONNX_MODELS_DIR) / "detection" / "retinaface_10g.onnx"
+    if not model_path.is_file():
+        raise FileNotFoundError(
+            "Modèle de test absent (aucun téléchargement automatique effectué) : "
+            f"{model_path}"
+        )
 
-# Ajouter explicitement les repertoires connus
-for path in [
-    NVIDIA / "cu13" / "bin" / "x86_64",
-    NVIDIA / "cudnn" / "bin",
-]:
-    if path.is_dir():
-        DLL_HANDLES.append(os.add_dll_directory(str(path)))
+    print("=" * 64)
+    print("AI_VISAGE — TEST ONNX CUDA")
+    print("=" * 64)
+    print("Python :", sys.executable)
+    print("Modèle :", model_path)
 
-# 2. Precharger les DLL NVIDIA via ONNX Runtime
-print("\nONNX Runtime :", ort.__version__)
-print("\nPréchargement des bibliothèques CUDA et cuDNN...")
+    status = initialize_cuda(required=True)
+    print("ONNX Runtime :", status.get("onnxruntime_version"))
+    print("Site-packages :", status.get("site_packages"))
+    print("DLL NVIDIA enregistrées :", len(status.get("dll_directories_registered", [])))
+    print("Providers disponibles :", status.get("available_providers"))
 
-ort.preload_dlls(directory=str(SITE))
+    models.set_models_dir(str(ONNX_MODELS_DIR))
+    runtime.configure_provider("cuda", True)
+    session = runtime.session("retinaface_10g")
 
-print("Préchargement terminé.")
+    actual_providers = session.get_providers()
+    print("Providers de la session :", actual_providers)
+    if not actual_providers or actual_providers[0] != "CUDAExecutionProvider":
+        raise RuntimeError(f"La session n'utilise pas CUDA en premier : {actual_providers}")
 
-# 3. Verifier quelques DLL essentielles
-print("\nVérification des DLL :")
+    input_meta = session.get_inputs()[0]
+    if input_meta.type != "tensor(float)":
+        raise RuntimeError(f"Type d'entrée non pris en charge : {input_meta.type}")
 
-dll_names = [
-    "cublas64_13.dll",
-    "cublasLt64_13.dll",
-    "cudart64_13.dll",
-    "cudnn64_9.dll",
-]
+    shape = []
+    for index, dimension in enumerate(input_meta.shape):
+        if isinstance(dimension, int) and dimension > 0:
+            shape.append(dimension)
+        elif index == 0:
+            shape.append(1)
+        elif index == 1:
+            shape.append(3)
+        else:
+            shape.append(640)
 
-for name in dll_names:
-    matches = list(NVIDIA.rglob(name))
-    print(f"\n{name} :")
+    import numpy as np
 
-    if not matches:
-        print("  INTROUVABLE")
-        continue
+    sample = np.zeros(shape, dtype=np.float32)
+    print("Entrée :", input_meta.name, shape)
+    outputs = session.run(None, {input_meta.name: sample})
+    print("Inférence réussie. Sorties :", [tuple(output.shape) for output in outputs])
+    print("TEST CUDA RÉUSSI")
 
-    for path in matches:
-        print(" ", path)
 
-# 4. Creer la session
-print("\nCréation de la session ONNX CUDA...")
-
-options = ort.SessionOptions()
-options.log_severity_level = 2
-
-session = ort.InferenceSession(
-    str(MODEL),
-    sess_options=options,
-    providers=[
-        ("CUDAExecutionProvider", {"device_id": 0}),
-        "CPUExecutionProvider",
-    ],
-)
-
-providers = session.get_providers()
-
-print("\nProviders actifs :", providers)
-
-if "CUDAExecutionProvider" not in providers:
-    raise RuntimeError("CUDA n'a pas pu être activé.")
-
-# 5. Inférence
-item = session.get_inputs()[0]
-
-if item.type != "tensor(float)":
-    raise RuntimeError(f"Type non géré : {item.type}")
-
-shape = [
-    dimension if isinstance(dimension, int) and dimension > 0
-    else (1 if index == 0 else 3 if index == 1 else 640)
-    for index, dimension in enumerate(item.shape)
-]
-
-data = np.zeros(shape, dtype=np.float32)
-
-print("\nEntrée :", item.name, shape)
-print("Exécution de l'inférence...")
-
-outputs = session.run(None, {item.name: data})
-
-print("\nInférence réussie !")
-
-for index, output in enumerate(outputs):
-    print(f"Sortie {index} : {output.shape}")
-
-print("\nTEST CUDA REUSSI")
+if __name__ == "__main__":
+    main()

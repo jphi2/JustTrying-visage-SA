@@ -1,15 +1,19 @@
-﻿"""AI_Visage standalone local API."""
+"""AI_Visage standalone local API."""
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from app.core.config import settings
 from app.services.engine_service import initialize_engine
 
 from app.api.health import router as health_router
 from app.api.models import router as models_router
+from app.api.faces import router as faces_router
+from app.api.identities import router as identities_router
+from app.api.processing import router as processing_router
 
 
 @asynccontextmanager
@@ -48,7 +52,39 @@ app.include_router(
     models_router,
     prefix=settings.api_prefix,
 )
+app.include_router(faces_router, prefix=settings.api_prefix)
+app.include_router(identities_router, prefix=settings.api_prefix)
+app.include_router(processing_router, prefix=settings.api_prefix)
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        openapi_version="3.0.3",
+    )
+
+
+
+
+    images = (
+        schema["components"]["schemas"]
+        ["Body_post_identity_api_identities_post"]
+        ["properties"]["images"]
+    )
+
+    images["items"]["format"] = "binary"
+    images["items"].pop("contentMediaType", None)
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 @app.get("/")
 def root():

@@ -1,32 +1,26 @@
 # ============================================================
-# AI_VISAGE - Installation des dependances
+# AI_VISAGE - Installation des dépendances dans python\
 # ============================================================
 
 $ErrorActionPreference = "Stop"
-
-$Project = "E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage"
-
-$Python = Join-Path $Project "python\venv\Scripts\python.exe"
-$Requirements = Join-Path $Project "requirements.txt"
-
-Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host " AI_VISAGE - DEPENDANCES" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
+$Project = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Python = Join-Path $Project "python\python.exe"
+$RootRequirements = Join-Path $Project "requirements.txt"
+$BackendRequirements = Join-Path $Project "backend\requirements.txt"
 
 if (!(Test-Path $Python)) {
-    throw "Environnement Python introuvable."
+    throw "Python du projet introuvable : $Python. Lance d'abord install_python.ps1."
+}
+if (!(Test-Path $RootRequirements)) { throw "Fichier introuvable : $RootRequirements" }
+
+Write-Host "Installation des dépendances principales..." -ForegroundColor Cyan
+& $Python -m pip install -r $RootRequirements
+if ($LASTEXITCODE -ne 0) { throw "Échec de l'installation des dépendances principales." }
+
+if (Test-Path $BackendRequirements) {
+    Write-Host "Installation des dépendances du backend..." -ForegroundColor Cyan
+    & $Python -m pip install -r $BackendRequirements
+    if ($LASTEXITCODE -ne 0) { throw "Échec de l'installation des dépendances du backend." }
 }
 
-if (!(Test-Path $Requirements)) {
-    throw "requirements.txt introuvable."
-}
-
-Write-Host "`nInstallation des dependances..." -ForegroundColor Yellow
-
-& $Python -m pip install -r $Requirements
-
-if ($LASTEXITCODE -ne 0) {
-    throw "Erreur pendant l'installation des dependances."
-}
-
-Write-Host "`nInstallation terminee !" -ForegroundColor Green
+Write-Host "`nDépendances installées dans : $Python" -ForegroundColor Green

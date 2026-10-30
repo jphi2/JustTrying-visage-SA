@@ -1,6 +1,37 @@
-# Exclure le répertoire python
-python/
+# Configuration locale
+.env
+.env.*
 
-# Exclure tous les fichiers JPG
-*.jpg
-*.jpeg
+# Python autonome et environnements
+/python/
+/venv/
+/.venv/
+__pycache__/
+*.py[cod]
+
+# Modèles IA
+*.onnx
+*.safetensors
+*.pth
+*.pt
+*.ckpt
+
+# Résultats et fichiers temporaires
+outputs/
+results/
+temp/
+tmp/
+
+# Tests contenant des images
+tests/*.jpg
+tests/*.jpeg
+tests/*.png
+
+# IDE
+.vscode/
+.idea/
+
+# Fichiers temporaires de diagnostic
+tests/swap_headers*.txt
+old.gitignore
+backend/app/core/cuda_*.py
