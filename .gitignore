@@ -1,0 +1,6 @@
+# Exclure le répertoire python
+python/
+
+# Exclure tous les fichiers JPG
+*.jpg
+*.jpeg

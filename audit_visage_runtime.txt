@@ -1,0 +1,109 @@
+﻿PYTHON : 3.13.17 (tags/v3.13.17:64e080d, Oct 21 2026, 14:08:53) [MSC v.1944 64 bit (AMD64)]
+EXECUTABLE : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage\python\venv\Scripts\python.exe
+ROOT : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage
+
+========== IMPORTS ==========
+[OK]  lib_visage.models
+[OK]  lib_visage.runtime
+[OK]  lib_visage.analysis
+[OK]  lib_visage.pipeline
+[OK]  lib_visage.swapper
+[OK]  lib_visage.restorer
+[OK]  lib_visage.facemodel
+
+========== PIPELINE ==========
+
+CLASSE : Options
+  swapper = 'hyperswap_1a_256'
+  detector = 'retinaface_10g'
+  det_size = 640
+  det_threshold = 0.5
+  try_rotations = False
+  target_indexes = '0'
+  sort_order = 'large-small'
+  gender = 'any'
+  min_face_size = 0
+  strength = 1.0
+  pixel_boost = 1
+  mask_box = True
+  mask_blur = 0.3
+  mask_padding = (0, 0, 0, 0)
+  mask_model = True
+  mask_occlusion = False
+  occluder = 'xseg_1'
+  mask_region = False
+  parser = 'bisenet_resnet_34'
+  regions = <dataclasses._MISSING_TYPE object at 0x000001A3E261F4D0>
+  region_dilate = 0
+  keep_mouth = False
+  color_match = False
+  restorer = 'none'
+  restorer_visibility = 1.0
+  codeformer_weight = 0.5
+  face_boost = False
+  restore_guard = 0.0
+  report_similarity = False
+  sfw = 'off'
+Signature : (swapper: 'str' = 'hyperswap_1a_256', detector: 'str' = 'retinaface_10g', det_size: 'int' = 640, det_threshold: 'float' = 0.5, try_rotations: 'bool' = False, target_indexes: 'str' = '0', sort_order: 'str' = 'large-small', gender: 'str' = 'any', min_face_size: 'int' = 0, strength: 'float' = 1.0, pixel_boost: 'int' = 1, mask_box: 'bool' = True, mask_blur: 'float' = 0.3, mask_padding: 'tuple' = (0, 0, 0, 0), mask_model: 'bool' = True, mask_occlusion: 'bool' = False, occluder: 'str' = 'xseg_1', mask_region: 'bool' = False, parser: 'str' = 'bisenet_resnet_34', regions: 'list' = <factory>, region_dilate: 'int' = 0, keep_mouth: 'bool' = False, color_match: 'bool' = False, restorer: 'str' = 'none', restorer_visibility: 'float' = 1.0, codeformer_weight: 'float' = 0.5, face_boost: 'bool' = False, restore_guard: 'float' = 0.0, report_similarity: 'bool' = False, sfw: 'str' = 'off') -> None
+
+CLASSE : Result
+  image = <dataclasses._MISSING_TYPE object at 0x000001A3E261F4D0>
+  faces_found = 0
+  swapped = <dataclasses._MISSING_TYPE object at 0x000001A3E261F4D0>
+  face_mask = None
+  seconds = 0.0
+  message = ''
+  similarity = <dataclasses._MISSING_TYPE object at 0x000001A3E261F4D0>
+  flagged = False
+  restore_used = <dataclasses._MISSING_TYPE object at 0x000001A3E261F4D0>
+Signature : (image: 'np.ndarray', faces_found: 'int' = 0, swapped: 'list' = <factory>, face_mask: 'np.ndarray | None' = None, seconds: 'float' = 0.0, message: 'str' = '', similarity: 'list' = <factory>, flagged: 'bool' = False, restore_used: 'list' = <factory>) -> None
+identity_from_images (images: 'list[np.ndarray]', opts: 'Options | None' = None, face_index: 'int' = 0, name: 'str' = '', progress=None) -> 'tuple[Identity | None, list[str]]'
+identities_from_image (image: 'np.ndarray', indexes: 'list[int]', opts: 'Options | None' = None, progress=None) -> 'tuple[list[Identity], list[str]]'
+select_targets (frame: 'np.ndarray', opts: 'Options', progress=None) -> 'tuple[list[analysis.Face], list[int]]'
+process (frame: 'np.ndarray', identities: 'list[Identity]', opts: 'Options', progress=None) -> 'Result'
+restore_only (frame: 'np.ndarray', opts: 'Options', progress=None) -> 'Result'
+
+========== ANALYSIS ==========
+detect (frame: 'np.ndarray', detector: 'str' = 'retinaface_10g', size: 'int' = 640, threshold: 'float' = 0.5, try_rotations: 'bool' = False, progress=None, pad_retry: 'bool' = True) -> 'list[Face]'
+embed (frame: 'np.ndarray', face: 'Face', recognizer: 'str' = 'arcface_w600k_r50', progress=None) -> 'np.ndarray'
+classify (frame: 'np.ndarray', face: 'Face', progress=None) -> 'Face'
+sort_faces (faces: 'list[Face]', order: 'str') -> 'list[Face]'
+Face : (bbox: 'np.ndarray', kps: 'np.ndarray', score: 'float', embedding: 'np.ndarray | None' = None, gender: 'str | None' = None, age: 'str | None' = None, extra: 'dict' = <factory>) -> None
+
+========== FACEMODEL ==========
+Identity (embedding: 'np.ndarray', name: 'str' = '', sources: 'int' = 1, meta: 'dict' = <factory>) -> None
+average (identities: 'list[Identity]', weights: 'list[float] | None' = None, name: 'str' = '') -> 'Identity'
+save (identity: 'Identity', folder: 'str', name: 'str | None' = None, overwrite: 'bool' = False) -> 'str'
+load (path: 'str') -> 'Identity'
+list_models (folders: 'list[str]') -> 'dict[str, str]'
+delete (path: 'str') -> 'None'
+
+========== MODELS ==========
+detector : ['retinaface_10g', 'scrfd_2.5g', 'yoloface_8n']
+recognizer : ['arcface_w600k_r50']
+swapper : ['hyperswap_1a_256', 'hyperswap_1b_256', 'hyperswap_1c_256', 'inswapper_128', 'inswapper_128_fp16', 'reswapper_128', 'reswapper_256', 'simswap_256', 'simswap_unofficial_512', 'ghost_1_256', 'ghost_2_256', 'ghost_3_256', 'hififace_unofficial_256', 'alphaface_256']
+restorer : ['gfpgan_1.4', 'codeformer', 'gpen_bfr_256', 'gpen_bfr_512', 'gpen_bfr_1024', 'gpen_bfr_2048', 'restoreformer_plus_plus']
+occluder : ['xseg_1', 'xseg_2']
+parser : ['bisenet_resnet_34', 'bisenet_resnet_18']
+Dossier mod?les : C:\Users\jpp\models\visage
+
+========== ONNX RUNTIME ==========
+Providers disponibles : ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+Provider actif : CUDAExecutionProvider
+Pr?f?rence : auto
+
+========== CUDA CONFIGURATION ==========
+Site-packages : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage\python\venv\Lib\site-packages
+Existe : True
+Dossier NVIDIA : True
+ NVIDIA : cu13
+ NVIDIA : cudnn
+
+========== DEPENDANCES ==========
+[OK] numpy 2.5.4
+[OK] cv2 5.0.0
+[OK] onnxruntime 1.31.1
+[OK] PIL 13.0.0
+[ERREUR] safetensors ModuleNotFoundError("No module named 'safetensors'")
+
+========== FIN AUDIT ==========

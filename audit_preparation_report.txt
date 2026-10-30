@@ -1,0 +1,51 @@
+﻿============================================
+       AUDIT PREPARATOIRE AI_VISAGE
+============================================
+Date : 10/30/2026 15:04:33
+Racine : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage
+
+========== PYTHON ==========
+Version : Python 3.13.17
+Executable : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage\python\venv\Scripts\python.exe
+
+========== DEPENDANCES PYTHON ==========
+[OK] fastapi - 0.162.0
+[OK] uvicorn - 0.54.0
+[MANQUANT] safetensors
+[OK] numpy - 2.5.4
+[OK] cv2 - 5.0.0.93
+[OK] onnxruntime - version inconnue
+[OK] PIL - 13.0.0
+[OK] multipart - 0.0.32
+[OK] pydantic - 2.14.2
+[MANQUANT] httpx
+
+========== ONNX ET GPU ==========
+ONNX Runtime : 1.31.1
+Providers : ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+
+========== NODE.JS / REACT ==========
+[MANQUANT] Node.js
+[MANQUANT] NPM
+
+========== STRUCTURE DU PROJET ==========
+[OK] backend
+[OK] backend\app
+[OK] backend\app\core
+[ABSENT] backend\app\api
+[ABSENT] backend\app\services
+[OK] visage\lib_visage
+[ABSENT] frontend
+[ABSENT] frontend\src
+[ABSENT] data
+[OK] config
+
+========== FICHIERS ==========
+[OK] backend\app\core\cuda.py
+[OK] visage\lib_visage\pipeline.py
+[OK] visage\lib_visage\runtime.py
+[OK] visage\lib_visage\models.py
+[ABSENT] frontend\package.json
+[ABSENT] backend\requirements.txt
+[ABSENT] start.ps1
+

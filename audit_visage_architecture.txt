@@ -1,0 +1,196 @@
+﻿AUDIT ARCHITECTURE AI_VISAGE
+Date : 10/30/2026 14:59:24
+Racine : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage
+
+
+========================================
+FICHIER : pipeline.py
+========================================
+   3: from __future__ import annotations
+   5: import time
+   6: from dataclasses import asdict, dataclass, field, fields
+   8: import cv2
+   9: import numpy as np
+  11: from . import analysis, masks, models, restorer, safety, swapper
+  12: from .facemodel import Identity, average
+  13: from .geometry import paste_back, warp_mask_to_frame
+  16: @dataclass
+  17: class Options:
+  56:     def from_dict(cls, data: dict | None) -> "Options":
+  64:     def to_dict(self) -> dict:
+  68: @dataclass
+  69: class Result:
+  81: def identity_from_images(images: list[np.ndarray], opts: Options | None = None, face_index: int = 0,
+  99: def identities_from_image(image: np.ndarray, indexes: list[int], opts: Options | None = None,
+ 114: def _color_match(swapped: np.ndarray, original: np.ndarray, mask: np.ndarray) -> np.ndarray:
+ 128: def _build_mask(opts: Options, crop: np.ndarray, swapped: np.ndarray, model_mask: np.ndarray | None,
+ 148: def _likeness(image: np.ndarray, face: analysis.Face, identity: Identity, progress=None) -> float:
+ 153: def _guarded(render, visibility: float, max_drop: float, baseline: float, score) -> tuple[np.ndarray, float]:
+ 163: def select_targets(frame: np.ndarray, opts: Options, progress=None) -> tuple[list[analysis.Face], list[int]]:
+ 175: def process(frame: np.ndarray, identities: list[Identity], opts: Options, progress=None) -> Result:
+ 211:         def score(img, face=face, identity=identity):
+ 217:             def render(v, before=out, swapped=swapped, fixed=fixed, mask=mask, matrix=matrix):
+ 232:             def render(v, before=out, restored=restored, rcrop=rcrop, rmatrix=rmatrix):
+ 259: def restore_only(frame: np.ndarray, opts: Options, progress=None) -> Result:
+
+========================================
+FICHIER : runtime.py
+========================================
+   9: from __future__ import annotations
+  11: import gc
+  12: import os
+  13: import threading
+  15: from . import models
+  43: def ort():
+  45:         import onnxruntime
+  59: def available_providers() -> list[str]:
+  66: def resolve_providers() -> list:
+  82: def _with_options(name: str):
+  90: def active_provider() -> str:
+  95: def ort_gpu_spec(cuda_major: int | None) -> str:
+ 100: def gpu_hint(nvidia: bool, cuda_major: int | None = None) -> str | None:
+ 116: def _prepare_cuda():
+ 130: def session(key: str, progress=None):
+ 148: def loaded() -> list[str]:
+ 152: def unload(kind: str | None = None) -> int:
+ 168: def input_names(sess) -> list[str]:
+
+========================================
+FICHIER : analysis.py
+========================================
+   6: from __future__ import annotations
+   8: from dataclasses import dataclass, field
+   9: from functools import lru_cache
+  11: import cv2
+  12: import numpy as np
+  14: from . import models, runtime
+  15: from .geometry import warp_face
+  18: @dataclass
+  19: class Face:
+  29:     def area(self) -> float:
+  33:     def normed_embedding(self) -> np.ndarray | None:
+  42: def _anchors(stride: int, num_anchors: int, h: int, w: int) -> np.ndarray:
+  48: def _letterbox(frame: np.ndarray, size: int) -> tuple[np.ndarray, float]:
+  58: def _detect_scrfd(sess, frame: np.ndarray, size: int, threshold: float):
+  81: def _detect_yoloface(sess, frame: np.ndarray, size: int, threshold: float):
+  96: def _nms(boxes: np.ndarray, scores: np.ndarray, iou: float) -> list[int]:
+ 104: def _rotate(frame: np.ndarray, angle: int) -> tuple[np.ndarray, np.ndarray]:
+ 116: def detect(frame: np.ndarray, detector: str = "retinaface_10g", size: int = 640, threshold: float = 0.5,
+ 154: def embed(frame: np.ndarray, face: Face, recognizer: str = "arcface_w600k_r50", progress=None) -> np.ndarray:
+ 168: def classify(frame: np.ndarray, face: Face, progress=None) -> Face:
+ 188: def sort_faces(faces: list[Face], order: str) -> list[Face]:
+ 202: def parse_indexes(text) -> list[int] | None:
+ 222: def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+
+========================================
+FICHIER : forge.py
+========================================
+   6: from __future__ import annotations
+   8: import base64
+   9: import hashlib
+  10: import io
+  11: import os
+  13: import cv2
+  14: import numpy as np
+  15: from PIL import Image
+  17: from modules import paths, shared
+  19: from . import facemodel, models, pipeline, runtime
+  32: def register_settings():
+  33:     import gradio as gr
+  35:     def add(key, default, label, component=None, component_args=None, info=None):
+  53: def apply_settings():
+  59: def cuda_major() -> int | None:
+  62:         import torch
+  71: def gpu_hint() -> str | None:
+  76: def sfw_mode() -> str:
+  81: def models_root() -> str:
+  87: def faces_dir() -> str:
+  91: def face_model_folders() -> list[str]:
+  95: def face_model_choices() -> list[str]:
+  99: def face_model_path(label: str) -> str | None:
+ 105: def to_rgb(value) -> np.ndarray | None:
+ 135: def to_base64(arr: np.ndarray, fmt: str = "PNG") -> str:
+ 141: def fingerprint(*parts) -> str:
+ 157: def resolve_identities(source_type: str, source_image, source_files, face_model: str, source_indexes: str,
+ 167:     from .analysis import parse_indexes
+ 195: def extend_mask_down(mask: np.ndarray, extend: float) -> np.ndarray:
+ 208: def refine(p, image: Image.Image, face_mask: np.ndarray, denoise: float, steps: int, padding: int,
+ 212:     from modules.processing import StableDiffusionProcessingImg2Img, process_images
+ 220:     def pick(values, fallback):
+
+========================================
+FICHIER : swapper.py
+========================================
+   3: from __future__ import annotations
+   5: import threading
+   7: import cv2
+   8: import numpy as np
+  10: from . import models, onnxread, runtime
+  11: from .geometry import explode_pixel_boost, implode_pixel_boost, warp_face
+  17: def _emap(key: str) -> np.ndarray:
+  25: def blend_identity(source: np.ndarray, target: np.ndarray | None, strength: float) -> np.ndarray:
+  40: def _convert(converter: str, identity: np.ndarray, progress=None) -> np.ndarray:
+  46: def source_input(key: str, identity: np.ndarray, progress=None) -> np.ndarray:
+  63: def swap_crop(key: str, frame: np.ndarray, kps: np.ndarray, identity: np.ndarray, pixel_boost: int = 1,
+
+========================================
+FICHIER : restorer.py
+========================================
+   3: from __future__ import annotations
+   5: import cv2
+   6: import numpy as np
+   8: from . import models, runtime
+   9: from .geometry import warp_face
+  12: def restore_crop(key: str, crop: np.ndarray, codeformer_weight: float = 0.5, progress=None) -> np.ndarray:
+  32: def restore_face(key: str, frame: np.ndarray, kps: np.ndarray, codeformer_weight: float = 0.5,
+
+========================================
+FICHIER : facemodel.py
+========================================
+   8: from __future__ import annotations
+  10: import json
+  11: import os
+  12: import re
+  13: import time
+  14: from dataclasses import dataclass, field
+  16: import numpy as np
+  21: @dataclass
+  22: class Identity:
+  29:     def normed(self) -> np.ndarray:
+  33: def average(identities: list[Identity], weights: list[float] | None = None, name: str = "") -> Identity:
+  42: def safe_name(name: str) -> str:
+  47: def save(identity: Identity, folder: str, name: str | None = None, overwrite: bool = False) -> str:
+  48:     from safetensors.numpy import save_file
+  61: def load(path: str) -> Identity:
+  62:     from safetensors import safe_open
+  77: def list_models(folders: list[str]) -> dict[str, str]:
+  91: def delete(path: str) -> None:
+  96: def describe(identity: Identity) -> str:
+
+========================================
+FICHIER : models.py
+========================================
+  10: from __future__ import annotations
+  12: import hashlib
+  13: import os
+  14: import threading
+  15: import urllib.request
+  16: from dataclasses import dataclass, field
+  18: from .hashes import MODEL_HASHES
+  25: @dataclass(frozen=True)
+  26: class ModelSpec:
+  42:     def title(self) -> str:
+  46: def _ff(release: str, file: str) -> tuple[str, ...]:
+  53: def _add(spec: ModelSpec) -> None:
+ 148: def keys_of(kind: str) -> list[str]:
+ 158: def set_models_dir(path: str) -> None:
+ 163: def models_dir() -> str:
+ 169: def local_path(key: str) -> str:
+ 173: def is_downloaded(key: str) -> bool:
+ 177: class ModelUnavailable(RuntimeError):
+ 181: def ensure(key: str, progress=None) -> str:
+ 205: def _sha256(path: str) -> str:
+ 213: def verify(key: str) -> bool | None:
+ 222: def _download(url: str, path: str, progress=None, expected: tuple[str, int] | None = None) -> None:
+ 260: def delete(key: str) -> None:
+ 266: def disk_usage() -> int:

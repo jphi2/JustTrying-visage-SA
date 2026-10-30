@@ -1,0 +1,479 @@
+﻿============================================
+AUDIT DU MOTEUR AI_VISAGE
+============================================
+Date : 10/30/2026 14:56:56
+Racine : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage
+Moteur : E:\SYNC-01M.I7\80_Developpements_Informatique\Python\Projects\AI_Visage\visage\lib_visage
+
+
+============================================
+FICHIER : visage\lib_visage\__init__.py
+TAILLE : 120 octets
+============================================
+   1: """Visage core: ONNX-only face swap / restore pipeline (no insightface, no Forge imports)."""
+
+============================================
+FICHIER : visage\lib_visage\analysis.py
+TAILLE : 9660 octets
+============================================
+   1: """Face detection, recognition and classification (ONNX only, no insightface).
+   6: from __future__ import annotations
+   8: from dataclasses import dataclass, field
+   9: from functools import lru_cache
+  11: import cv2
+  12: import numpy as np
+  14: from . import models, runtime
+  15: from .geometry import warp_face
+  18: @dataclass
+  19: class Face:
+  28:     @property
+  29:     def area(self) -> float:
+  32:     @property
+  33:     def normed_embedding(self) -> np.ndarray | None:
+  41: @lru_cache(maxsize=32)
+  42: def _anchors(stride: int, num_anchors: int, h: int, w: int) -> np.ndarray:
+  48: def _letterbox(frame: np.ndarray, size: int) -> tuple[np.ndarray, float]:
+  58: def _detect_scrfd(sess, frame: np.ndarray, size: int, threshold: float):
+  81: def _detect_yoloface(sess, frame: np.ndarray, size: int, threshold: float):
+  96: def _nms(boxes: np.ndarray, scores: np.ndarray, iou: float) -> list[int]:
+ 104: def _rotate(frame: np.ndarray, angle: int) -> tuple[np.ndarray, np.ndarray]:
+ 116: def detect(frame: np.ndarray, detector: str = "retinaface_10g", size: int = 640, threshold: float = 0.5,
+ 118:     spec = models.REGISTRY[detector]
+ 154: def embed(frame: np.ndarray, face: Face, recognizer: str = "arcface_w600k_r50", progress=None) -> np.ndarray:
+ 157:     spec = models.REGISTRY[recognizer]
+ 168: def classify(frame: np.ndarray, face: Face, progress=None) -> Face:
+ 172:     spec = models.REGISTRY["fairface"]
+ 188: def sort_faces(faces: list[Face], order: str) -> list[Face]:
+ 202: def parse_indexes(text) -> list[int] | None:
+ 222: def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+
+============================================
+FICHIER : visage\lib_visage\facemodel.py
+TAILLE : 3863 octets
+============================================
+   1: """Face models: reusable identities saved as small .safetensors files.
+   3: A Visage face model stores one averaged ArcFace embedding plus JSON metadata.
+   4: ReActor face models (``models/reactor/faces/*.safetensors``) can be loaded too,
+   8: from __future__ import annotations
+  10: import json
+  11: import os
+  12: import re
+  13: import time
+  14: from dataclasses import dataclass, field
+  16: import numpy as np
+  21: @dataclass
+  22: class Identity:
+  28:     @property
+  29:     def normed(self) -> np.ndarray:
+  33: def average(identities: list[Identity], weights: list[float] | None = None, name: str = "") -> Identity:
+  42: def safe_name(name: str) -> str:
+  47: def save(identity: Identity, folder: str, name: str | None = None, overwrite: bool = False) -> str:
+  48:     from safetensors.numpy import save_file
+  54:         raise FileExistsError(f"Face model '{name}' already exists")
+  61: def load(path: str) -> Identity:
+  62:     from safetensors import safe_open
+  77: def list_models(folders: list[str]) -> dict[str, str]:
+  91: def delete(path: str) -> None:
+  96: def describe(identity: Identity) -> str:
+
+============================================
+FICHIER : visage\lib_visage\forge.py
+TAILLE : 10544 octets
+============================================
+   6: from __future__ import annotations
+   8: import base64
+   9: import hashlib
+  10: import io
+  11: import os
+  13: import cv2
+  14: import numpy as np
+  15: from PIL import Image
+  17: from modules import paths, shared
+  19: from . import facemodel, models, pipeline, runtime
+  23: SWAPPERS = models.keys_of("swapper")
+  24: DETECTORS = models.keys_of("detector")
+  25: RESTORERS = ["none"] + models.keys_of("restorer")
+  26: OCCLUDERS = models.keys_of("occluder")
+  27: PARSERS = models.keys_of("parser")
+  32: def register_settings():
+  33:     import gradio as gr
+  35:     def add(key, default, label, component=None, component_args=None, info=None):
+  41:     add("visage_models_dir", "", "Models folder", info=f"empty = {os.path.join(paths.models_path, 'visage')}")
+  42:     add("visage_auto_download", True, "Download missing models automatically")
+  43:     add("visage_provider", "auto", "ONNX execution provider", gr.Dropdown,
+  44:         {"choices": list(runtime.PROVIDER_CHOICES)}, info="auto picks CUDA > ROCm > MIGraphX > DirectML > CoreML > CPU")
+  45:     add("visage_unload_after", False, "Unload Visage models after every generation", info="frees VRAM at the cost of reload time")
+  49:         info="off = no check (default) Â· skip = leave NSFW images untouched Â· blur = blur NSFW results. Models download only when enabled")
+  53: def apply_settings():
+  54:     models.set_models_dir(models_root())
+  55:     models.allow_download = bool(getattr(shared.opts, "visage_auto_download", True))
+  56:     runtime.provider_preference = getattr(shared.opts, "visage_provider", "auto") or "auto"
+  59: def cuda_major() -> int | None:
+  60:     """CUDA major version PyTorch was built for, when it can see an NVIDIA GPU."""
+  62:         import torch
+  64:         if torch.cuda.is_available() and torch.version.cuda:
+  65:             return int(torch.version.cuda.split(".")[0])
+  71: def gpu_hint() -> str | None:
+  72:     major = cuda_major()
+  76: def sfw_mode() -> str:
+  81: def models_root() -> str:
+  82:     cmd = getattr(shared.cmd_opts, "visage_models_dir", None)
+  83:     opt = getattr(shared.opts, "visage_models_dir", "") if hasattr(shared, "opts") else ""
+  84:     return cmd or opt or os.path.join(paths.models_path, "visage")
+  87: def faces_dir() -> str:
+  88:     return os.path.join(models_root(), "faces")
+  91: def face_model_folders() -> list[str]:
+  92:     return [faces_dir(), os.path.join(paths.models_path, "reactor", "faces")]
+  95: def face_model_choices() -> list[str]:
+  96:     return list(facemodel.list_models(face_model_folders()))
+  99: def face_model_path(label: str) -> str | None:
+ 100:     return facemodel.list_models(face_model_folders()).get(label)
+ 105: def to_rgb(value) -> np.ndarray | None:
+ 135: def to_base64(arr: np.ndarray, fmt: str = "PNG") -> str:
+ 141: def fingerprint(*parts) -> str:
+ 157: def resolve_identities(source_type: str, source_image, source_files, face_model: str, source_indexes: str,
+ 158:                        opts: pipeline.Options) -> tuple[list[facemodel.Identity], list[str]]:
+ 161:     if source_type == "Face model":
+ 162:         path = face_model_path(face_model) if face_model else None
+ 164:             return [], [f"face model '{face_model}' not found"]
+ 165:         return [facemodel.load(path)], notes
+ 167:     from .analysis import parse_indexes
+ 195: def extend_mask_down(mask: np.ndarray, extend: float) -> np.ndarray:
+ 208: def refine(p, image: Image.Image, face_mask: np.ndarray, denoise: float, steps: int, padding: int,
+ 212:     from modules.processing import StableDiffusionProcessingImg2Img, process_images
+ 220:     def pick(values, fallback):
+ 228:         sd_model=shared.sd_model,
+
+============================================
+FICHIER : visage\lib_visage\geometry.py
+TAILLE : 5664 octets
+============================================
+   8: from __future__ import annotations
+  10: import cv2
+  11: import numpy as np
+  79: def estimate_matrix(kps: np.ndarray, template: str, size: int) -> np.ndarray:
+  88: def warp_face(frame: np.ndarray, kps: np.ndarray, template: str, size: int) -> tuple[np.ndarray, np.ndarray]:
+  94: def transform_points(points: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+  98: def paste_back(frame: np.ndarray, crop: np.ndarray, mask: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+ 126: def warp_mask_to_frame(mask: np.ndarray, matrix: np.ndarray, frame_shape: tuple[int, ...]) -> np.ndarray:
+ 133: def implode_pixel_boost(crop: np.ndarray, factor: int, model_size: int) -> list[np.ndarray]:
+ 134:     """Split a (model_size*factor)^2 crop into factor^2 sub-pixel phase crops of model_size.
+ 141:     tiles = crop.reshape(model_size, factor, model_size, factor, 3).transpose(1, 3, 0, 2, 4)
+ 145: def explode_pixel_boost(tiles: list[np.ndarray], factor: int, model_size: int) -> np.ndarray:
+ 148:     stack = np.stack(tiles).reshape(factor, factor, model_size, model_size, 3)
+ 149:     return stack.transpose(2, 0, 3, 1, 4).reshape(model_size * factor, model_size * factor, 3)
+
+============================================
+FICHIER : visage\lib_visage\hashes.py
+TAILLE : 3943 octets
+============================================
+   1: """SHA-256 and size of every model, from the upstream Hugging Face LFS metadata (2026-10-18)."""
+   3: MODEL_HASHES: dict[str, tuple[str, int]] = {
+
+============================================
+FICHIER : visage\lib_visage\masks.py
+TAILLE : 3543 octets
+============================================
+   3: from __future__ import annotations
+   5: import cv2
+   6: import numpy as np
+   8: from . import runtime
+  28: def _feather(mask: np.ndarray, sigma: float) -> np.ndarray:
+  35: def box_mask(size: int, blur: float = 0.3, padding: tuple[int, int, int, int] = (0, 0, 0, 0)) -> np.ndarray:
+  53: def occlusion_mask(crop: np.ndarray, model: str = "xseg_1", progress=None) -> np.ndarray:
+  55:     sess = runtime.session(model, progress)
+  63: def parse(crop: np.ndarray, model: str = "bisenet_resnet_34", progress=None) -> np.ndarray:
+  65:     sess = runtime.session(model, progress)
+  74: def region_mask(labels: np.ndarray, regions: list[str], dilate: int = 0) -> np.ndarray:
+  84: def combine(masks: list[np.ndarray]) -> np.ndarray:
+
+============================================
+FICHIER : visage\lib_visage\models.py
+TAILLE : 14906 octets
+============================================
+   1: """Model registry and on-demand downloads.
+   3: Visage never redistributes model weights. Every model is fetched from its
+   4: upstream host the first time it is needed and stored under the models
+   5: directory (``<forge>/models/visage`` by default). Several of these models are
+  10: from __future__ import annotations
+  12: import hashlib
+  13: import os
+  14: import threading
+  15: import urllib.request
+  16: from dataclasses import dataclass, field
+  18: from .hashes import MODEL_HASHES
+  22: _REACTOR_HF = "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/{file}"
+  25: @dataclass(frozen=True)
+  26: class ModelSpec:
+  33:     # model specific knobs
+  41:     @property
+  42:     def title(self) -> str:
+  46: def _ff(release: str, file: str) -> tuple[str, ...]:
+  50: REGISTRY: dict[str, ModelSpec] = {}
+  53: def _add(spec: ModelSpec) -> None:
+  54:     REGISTRY[spec.key] = spec
+  58: _add(ModelSpec("retinaface_10g", "detector", "detection/retinaface_10g.onnx", _ff("models-3.0.0", "retinaface_10g.onnx"),
+  60: _add(ModelSpec("scrfd_2.5g", "detector", "detection/scrfd_2.5g.onnx", _ff("models-3.0.0", "scrfd_2.5g.onnx"),
+  62: _add(ModelSpec("yoloface_8n", "detector", "detection/yoloface_8n.onnx", _ff("models-3.0.0", "yoloface_8n.onnx"),
+  64: _add(ModelSpec("arcface_w600k_r50", "recognizer", "recognition/arcface_w600k_r50.onnx", _ff("models-3.0.0", "arcface_w600k_r50.onnx"),
+  66: _add(ModelSpec("fan_68_5", "landmarker", "detection/fan_68_5.onnx", _ff("models-3.0.0", "fan_68_5.onnx"),
+  68: _add(ModelSpec("fairface", "classifier", "detection/fairface.onnx", _ff("models-3.0.0", "fairface.onnx"),
+  72: _add(ModelSpec("hyperswap_1a_256", "swapper", "swappers/hyperswap_1a_256.onnx", _ff("models-3.3.0", "hyperswap_1a_256.onnx"),
+  74: _add(ModelSpec("hyperswap_1b_256", "swapper", "swappers/hyperswap_1b_256.onnx", _ff("models-3.3.0", "hyperswap_1b_256.onnx"),
+  76: _add(ModelSpec("hyperswap_1c_256", "swapper", "swappers/hyperswap_1c_256.onnx", _ff("models-3.3.0", "hyperswap_1c_256.onnx"),
+  78: _add(ModelSpec("inswapper_128", "swapper", "swappers/inswapper_128.onnx", _ff("models-3.0.0", "inswapper_128.onnx"),
+  80: _add(ModelSpec("inswapper_128_fp16", "swapper", "swappers/inswapper_128_fp16.onnx", _ff("models-3.0.0", "inswapper_128_fp16.onnx"),
+  82: _add(ModelSpec("reswapper_128", "swapper", "swappers/reswapper_128.onnx", (_REACTOR_HF.format(file="reswapper_128.onnx"),),
+  84: _add(ModelSpec("reswapper_256", "swapper", "swappers/reswapper_256.onnx", (_REACTOR_HF.format(file="reswapper_256.onnx"),),
+  87: _add(ModelSpec("simswap_256", "swapper", "swappers/simswap_256.onnx", _ff("models-3.0.0", "simswap_256.onnx"),
+  90: _add(ModelSpec("simswap_unofficial_512", "swapper", "swappers/simswap_unofficial_512.onnx", _ff("models-3.0.0", "simswap_unofficial_512.onnx"),
+  93: _add(ModelSpec("ghost_1_256", "swapper", "swappers/ghost_1_256.onnx", _ff("models-3.0.0", "ghost_1_256.onnx"),
+  96: _add(ModelSpec("ghost_2_256", "swapper", "swappers/ghost_2_256.onnx", _ff("models-3.0.0", "ghost_2_256.onnx"),
+  99: _add(ModelSpec("ghost_3_256", "swapper", "swappers/ghost_3_256.onnx", _ff("models-3.0.0", "ghost_3_256.onnx"),
+ 102: _add(ModelSpec("hififace_unofficial_256", "swapper", "swappers/hififace_unofficial_256.onnx", _ff("models-3.1.0", "hififace_unofficial_256.onnx"),
+ 105: _add(ModelSpec("alphaface_256", "swapper", "swappers/alphaface_256.onnx", _ff("models-3.9.0", "alphaface_256.onnx"),
+ 110:     _add(ModelSpec(f"crossface_{_name}", "converter", f"convert/crossface_{_name}.onnx", _ff("models-3.4.0", f"crossface_{_name}.onnx"),
+ 114: _add(ModelSpec("nsfw_1", "safety", "safety/nsfw_1.onnx", _ff("models-3.3.0", "nsfw_1.onnx"), "see FaceFusion", "NSFW detector 1", size=640,
+ 116: _add(ModelSpec("nsfw_2", "safety", "safety/nsfw_2.onnx", _ff("models-3.3.0", "nsfw_2.onnx"), "see FaceFusion", "NSFW classifier 2", size=384,
+ 118: _add(ModelSpec("nsfw_3", "safety", "safety/nsfw_3.onnx", _ff("models-3.3.0", "nsfw_3.onnx"), "see FaceFusion", "NSFW classifier 3", size=448,
+ 122: _add(ModelSpec("gfpgan_1.4", "restorer", "restorers/gfpgan_1.4.onnx", _ff("models-3.0.0", "gfpgan_1.4.onnx"),
+ 124: _add(ModelSpec("codeformer", "restorer", "restorers/codeformer.onnx", _ff("models-3.0.0", "codeformer.onnx"),
+ 126: _add(ModelSpec("gpen_bfr_256", "restorer", "restorers/gpen_bfr_256.onnx", _ff("models-3.0.0", "gpen_bfr_256.onnx"),
+ 128: _add(ModelSpec("gpen_bfr_512", "restorer", "restorers/gpen_bfr_512.onnx", _ff("models-3.0.0", "gpen_bfr_512.onnx"),
+ 130: _add(ModelSpec("gpen_bfr_1024", "restorer", "restorers/gpen_bfr_1024.onnx", _ff("models-3.0.0", "gpen_bfr_1024.onnx"),
+ 132: _add(ModelSpec("gpen_bfr_2048", "restorer", "restorers/gpen_bfr_2048.onnx", _ff("models-3.0.0", "gpen_bfr_2048.onnx"),
+ 134: _add(ModelSpec("restoreformer_plus_plus", "restorer", "restorers/restoreformer_plus_plus.onnx", _ff("models-3.0.0", "restoreformer_plus_plus.onnx"),
+ 138: _add(ModelSpec("xseg_1", "occluder", "masks/xseg_1.onnx", _ff("models-3.1.0", "xseg_1.onnx"),
+ 140: _add(ModelSpec("xseg_2", "occluder", "masks/xseg_2.onnx", _ff("models-3.1.0", "xseg_2.onnx"),
+ 142: _add(ModelSpec("bisenet_resnet_34", "parser", "masks/bisenet_resnet_34.onnx", _ff("models-3.0.0", "bisenet_resnet_34.onnx"),
+ 144: _add(ModelSpec("bisenet_resnet_18", "parser", "masks/bisenet_resnet_18.onnx", _ff("models-3.1.0", "bisenet_resnet_18.onnx"),
+ 148: def keys_of(kind: str) -> list[str]:
+ 149:     return [k for k, s in REGISTRY.items() if s.kind == kind]
+ 153: _models_dir: str | None = None
+ 158: def set_models_dir(path: str) -> None:
+ 159:     global _models_dir
+ 160:     _models_dir = path
+ 163: def models_dir() -> str:
+ 164:     if _models_dir:
+ 165:         return _models_dir
+ 166:     return os.path.join(os.getcwd(), "models", "visage")
+ 169: def local_path(key: str) -> str:
+ 170:     return os.path.join(models_dir(), *REGISTRY[key].file.split("/"))
+ 173: def is_downloaded(key: str) -> bool:
+ 177: class ModelUnavailable(RuntimeError):
+ 181: def ensure(key: str, progress=None) -> str:
+ 183:     if key not in REGISTRY:
+ 184:         raise ModelUnavailable(f"Unknown model '{key}'")
+ 189:         raise ModelUnavailable(f"Model '{key}' is missing at {path} and automatic downloads are disabled")
+ 196:         for url in REGISTRY[key].urls:
+ 198:                 _download(url, path, progress, MODEL_HASHES.get(key))
+ 202:         raise ModelUnavailable(f"Could not download '{key}':\n  " + "\n  ".join(errors))
+ 205: def _sha256(path: str) -> str:
+ 213: def verify(key: str) -> bool | None:
+ 214:     """True / False against the pinned SHA-256; None when the model is missing or has no pinned hash."""
+ 216:     expected = MODEL_HASHES.get(key)
+ 222: def _download(url: str, path: str, progress=None, expected: tuple[str, int] | None = None) -> None:
+ 260: def delete(key: str) -> None:
+ 266: def disk_usage() -> int:
+ 267:     root = models_dir()
+ 275: __all__ = ["REGISTRY", "ModelSpec", "ModelUnavailable", "ensure", "keys_of", "local_path", "is_downloaded",
+ 276:            "set_models_dir", "models_dir"]
+
+============================================
+FICHIER : visage\lib_visage\onnxread.py
+TAILLE : 3636 octets
+============================================
+   1: """Read initializers straight from an .onnx file's protobuf wire format.
+   3: The `onnx` package needs a matching `protobuf`, and Forge installs do not always have one
+   4: (onnx 1.23 with an older protobuf fails on `google.protobuf.runtime_version`). Visage only
+   8: from __future__ import annotations
+  10: import mmap
+  12: import numpy as np
+  18: def _varint(buf, pos: int) -> tuple[int, int]:
+  29: def _fields(buf, start: int, end: int):
+  49: def _packed_varints(buf, span) -> list[int]:
+  57: def _tensor(buf, span) -> np.ndarray:
+  75:             raise ValueError("tensor data is stored outside the .onnx file")
+  88: def last_initializer(path: str) -> np.ndarray:
+  89:     """The graph's last initializer (ModelProto.graph = 7, GraphProto.initializer = 5)."""
+
+============================================
+FICHIER : visage\lib_visage\pipeline.py
+TAILLE : 13132 octets
+============================================
+   3: from __future__ import annotations
+   5: import time
+   6: from dataclasses import asdict, dataclass, field, fields
+   8: import cv2
+   9: import numpy as np
+  11: from . import analysis, masks, models, restorer, safety, swapper
+  12: from .facemodel import Identity, average
+  13: from .geometry import paste_back, warp_mask_to_frame
+  16: @dataclass
+  17: class Options:
+  35:     mask_model: bool = True  # use the swapper's own mask when it has one (HyperSwap)
+  55:     @classmethod
+  56:     def from_dict(cls, data: dict | None) -> "Options":
+  64:     def to_dict(self) -> dict:
+  68: @dataclass
+  69: class Result:
+  81: def identity_from_images(images: list[np.ndarray], opts: Options | None = None, face_index: int = 0,
+  99: def identities_from_image(image: np.ndarray, indexes: list[int], opts: Options | None = None,
+ 114: def _color_match(swapped: np.ndarray, original: np.ndarray, mask: np.ndarray) -> np.ndarray:
+ 128: def _build_mask(opts: Options, crop: np.ndarray, swapped: np.ndarray, model_mask: np.ndarray | None,
+ 132:     if opts.mask_box or not (opts.mask_occlusion or opts.mask_region or (opts.mask_model and model_mask is not None)):
+ 134:     if opts.mask_model and model_mask is not None:
+ 135:         parts.append(model_mask)
+ 148: def _likeness(image: np.ndarray, face: analysis.Face, identity: Identity, progress=None) -> float:
+ 153: def _guarded(render, visibility: float, max_drop: float, baseline: float, score) -> tuple[np.ndarray, float]:
+ 163: def select_targets(frame: np.ndarray, opts: Options, progress=None) -> tuple[list[analysis.Face], list[int]]:
+ 175: def process(frame: np.ndarray, identities: list[Identity], opts: Options, progress=None) -> Result:
+ 180:     if opts.swapper not in models.REGISTRY:
+ 205:         crop, swapped, model_mask, matrix = swapper.swap_crop(opts.swapper, out, face.kps, ident, opts.pixel_boost, progress)
+ 206:         mask = _build_mask(opts, crop, swapped, model_mask, progress)
+ 211:         def score(img, face=face, identity=identity):
+ 217:             def render(v, before=out, swapped=swapped, fixed=fixed, mask=mask, matrix=matrix):
+ 232:             def render(v, before=out, restored=restored, rcrop=rcrop, rmatrix=rmatrix):
+ 259: def restore_only(frame: np.ndarray, opts: Options, progress=None) -> Result:
+
+============================================
+FICHIER : visage\lib_visage\preview.py
+TAILLE : 1995 octets
+============================================
+   3: from __future__ import annotations
+   5: import cv2
+   6: import numpy as np
+   8: from . import analysis
+   9: from .pipeline import Options
+  12: def annotate(frame: np.ndarray, opts: Options | None = None, classify: bool = False, highlight: list[int] | None = None,
+
+============================================
+FICHIER : visage\lib_visage\restorer.py
+TAILLE : 1760 octets
+============================================
+   1: """Face restoration (GFPGAN, CodeFormer, GPEN, RestoreFormer++) through ONNX."""
+   3: from __future__ import annotations
+   5: import cv2
+   6: import numpy as np
+   8: from . import models, runtime
+   9: from .geometry import warp_face
+  12: def restore_crop(key: str, crop: np.ndarray, codeformer_weight: float = 0.5, progress=None) -> np.ndarray:
+  14:     spec = models.REGISTRY[key]
+  32: def restore_face(key: str, frame: np.ndarray, kps: np.ndarray, codeformer_weight: float = 0.5,
+  35:     spec = models.REGISTRY[key]
+
+============================================
+FICHIER : visage\lib_visage\runtime.py
+TAILLE : 5828 octets
+============================================
+   1: """ONNX Runtime session management.
+   3: Visage only *uses* whatever onnxruntime distribution is installed; it never
+   5: extensions broke Forge installs). Provider choice is automatic unless the
+   9: from __future__ import annotations
+  11: import gc
+  12: import os
+  13: import threading
+  15: from . import models
+  19: provider_preference = "auto"
+  23:     "CUDAExecutionProvider",
+  24:     "ROCMExecutionProvider",
+  25:     "MIGraphXExecutionProvider",
+  26:     "DmlExecutionProvider",
+  27:     "CoreMLExecutionProvider",
+  28:     "CPUExecutionProvider",
+  31: PROVIDER_CHOICES = {
+  33:     "cuda": "CUDAExecutionProvider",
+  34:     "tensorrt": "TensorrtExecutionProvider",
+  35:     "rocm": "ROCMExecutionProvider",
+  36:     "migraphx": "MIGraphXExecutionProvider",
+  37:     "directml": "DmlExecutionProvider",
+  38:     "coreml": "CoreMLExecutionProvider",
+  39:     "cpu": "CPUExecutionProvider",
+  43: def ort():
+  45:         import onnxruntime
+  48:             "onnxruntime is not installed. Restart Forge so Visage's installer can add it, "
+  49:             "or install onnxruntime-gpu (NVIDIA) / onnxruntime-directml (AMD, Intel on Windows) manually."
+  51:     if not hasattr(onnxruntime, "InferenceSession"):
+  53:             "onnxruntime is broken in this venv (no InferenceSession). This usually means two onnxruntime "
+  54:             "builds were installed on top of each other. Uninstall every onnxruntime* package and install one."
+  56:     return onnxruntime
+  59: def available_providers() -> list[str]:
+  61:         return list(ort().get_available_providers())
+  66: def resolve_providers() -> list:
+  67:     available = available_providers()
+  68:     pinned = PROVIDER_CHOICES.get(provider_preference)
+  77:     if "CPUExecutionProvider" not in chosen:
+  78:         chosen.append("CPUExecutionProvider")
+  82: def _with_options(name: str):
+  83:     if name == "CUDAExecutionProvider":
+  85:     if name == "TensorrtExecutionProvider":
+  86:         return (name, {"trt_engine_cache_enable": True, "trt_engine_cache_path": models.models_dir() + "/trt_cache"})
+  90: def active_provider() -> str:
+  91:     p = resolve_providers()[0]
+  95: def ort_gpu_spec(cuda_major: int | None) -> str:
+  96:     """onnxruntime-gpu on PyPI is built for CUDA 13 from 1.27 on, CUDA 12 before that."""
+  97:     return "onnxruntime-gpu<1.27" if cuda_major is not None and cuda_major < 13 else "onnxruntime-gpu>=1.27"
+ 100: def gpu_hint(nvidia: bool, cuda_major: int | None = None) -> str | None:
+ 101:     """Advice for when an NVIDIA GPU is there but the installed onnxruntime can only use the CPU."""
+ 102:     available = available_providers()
+ 103:     if not nvidia or not available or {"CUDAExecutionProvider", "TensorrtExecutionProvider"} & set(available):
+ 107:         "Visage is running on the CPU: this machine has an NVIDIA GPU, but the installed onnxruntime has no CUDA support. "
+ 108:         f"Close Forge and run, in the Forge folder: `{py} -m pip uninstall -y onnxruntime` and then "
+ 109:         f"`{py} -m pip install \"{ort_gpu_spec(cuda_major)}\"`. Visage never changes onnxruntime on its own."
+ 113: _cuda_dlls_ready = False
+ 116: def _prepare_cuda():
+ 117:     """Let onnxruntime find the CUDA / cuDNN DLLs that PyTorch already ships (onnxruntime >= 1.21)."""
+ 118:     global _cuda_dlls_ready
+ 119:     if _cuda_dlls_ready:
+ 121:     _cuda_dlls_ready = True
+ 130: def session(key: str, progress=None):
+ 131:     path = models.ensure(key, progress)
+ 132:     provider = active_provider()
+ 133:     cache_key = (path, provider)
+ 138:             if provider in ("CUDAExecutionProvider", "TensorrtExecutionProvider"):
+ 139:                 _prepare_cuda()
+ 143:             sess = rt.InferenceSession(path, sess_options=opts, providers=resolve_providers())
+ 148: def loaded() -> list[str]:
+ 152: def unload(kind: str | None = None) -> int:
+ 153:     """Drop cached sessions (all, or only those of one model kind). Returns how many."""
+ 159:             paths = {models.local_path(k) for k in models.keys_of(kind)}
+ 168: def input_names(sess) -> list[str]:
+
+============================================
+FICHIER : visage\lib_visage\safety.py
+TAILLE : 2234 octets
+============================================
+   3: Three independent NSFW models vote. An image counts as NSFW only when at least
+   4: two agree, which keeps false positives low. The models are downloaded only when
+   8: from __future__ import annotations
+  10: import cv2
+  11: import numpy as np
+  13: from . import models, runtime
+  18: def _fit_contain(frame: np.ndarray, size: int) -> np.ndarray:
+  29: def _run(key: str, frame: np.ndarray, progress=None) -> np.ndarray:
+  30:     spec = models.REGISTRY[key]
+  37: def votes(frame: np.ndarray, progress=None) -> dict[str, bool]:
+  38:     """Per-model verdicts for an RGB frame."""
+  48: def is_nsfw(frame: np.ndarray, progress=None) -> bool:
+  52: def blur(frame: np.ndarray) -> np.ndarray:
+
+============================================
+FICHIER : visage\lib_visage\swapper.py
+TAILLE : 4432 octets
+============================================
+   3: from __future__ import annotations
+   5: import threading
+   7: import cv2
+   8: import numpy as np
+  10: from . import models, onnxread, runtime
+  11: from .geometry import explode_pixel_boost, implode_pixel_boost, warp_face
+  17: def _emap(key: str) -> np.ndarray:
+  21:             _emaps[key] = onnxread.last_initializer(models.local_path(key)).astype(np.float32)
+  25: def blend_identity(source: np.ndarray, target: np.ndarray | None, strength: float) -> np.ndarray:
+  35: # Visage keeps identities as unit vectors (face models store them that way). The CrossFace
+  40: def _convert(converter: str, identity: np.ndarray, progress=None) -> np.ndarray:
+  46: def source_input(key: str, identity: np.ndarray, progress=None) -> np.ndarray:
+  48:     spec = models.REGISTRY[key]
+  63: def swap_crop(key: str, frame: np.ndarray, kps: np.ndarray, identity: np.ndarray, pixel_boost: int = 1,
+  67:     Returns (original_crop, swapped_crop, model_mask_or_None, matrix); crops are float32 RGB 0..255
+  70:     spec = models.REGISTRY[key]

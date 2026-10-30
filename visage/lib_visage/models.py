@@ -1,0 +1,276 @@
+"""Model registry and on-demand downloads.
+
+Visage never redistributes model weights. Every model is fetched from its
+upstream host the first time it is needed and stored under the models
+directory (``<forge>/models/visage`` by default). Several of these models are
+licensed for non-commercial / research use only; the license is listed next
+to each entry and surfaced in the UI.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import threading
+import urllib.request
+from dataclasses import dataclass, field
+
+from .hashes import MODEL_HASHES
+
+_FF_HF = "https://huggingface.co/facefusion/{release}/resolve/main/{file}"
+_FF_GH = "https://github.com/facefusion/facefusion-assets/releases/download/{release}/{file}"
+_REACTOR_HF = "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/{file}"
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    key: str
+    kind: str  # detector | recognizer | landmarker | swapper | restorer | occluder | parser
+    file: str
+    urls: tuple[str, ...]
+    license: str
+    label: str = ""
+    # model specific knobs
+    template: str = ""
+    size: int = 0
+    mean: float = 0.0
+    std: float = 1.0
+    arch: str = ""
+    extra: dict = field(default_factory=dict)
+
+    @property
+    def title(self) -> str:
+        return self.label or self.key
+
+
+def _ff(release: str, file: str) -> tuple[str, ...]:
+    return (_FF_HF.format(release=release, file=file), _FF_GH.format(release=release, file=file))
+
+
+REGISTRY: dict[str, ModelSpec] = {}
+
+
+def _add(spec: ModelSpec) -> None:
+    REGISTRY[spec.key] = spec
+
+
+# --- detection / analysis -------------------------------------------------
+_add(ModelSpec("retinaface_10g", "detector", "detection/retinaface_10g.onnx", _ff("models-3.0.0", "retinaface_10g.onnx"),
+               "MIT (InsightFace SCRFD-10G)", "RetinaFace / SCRFD 10G", arch="scrfd"))
+_add(ModelSpec("scrfd_2.5g", "detector", "detection/scrfd_2.5g.onnx", _ff("models-3.0.0", "scrfd_2.5g.onnx"),
+               "MIT (InsightFace)", "SCRFD 2.5G (fast)", arch="scrfd"))
+_add(ModelSpec("yoloface_8n", "detector", "detection/yoloface_8n.onnx", _ff("models-3.0.0", "yoloface_8n.onnx"),
+               "GPL-3.0 (YOLOv8-face)", "YOLOv8n face", arch="yoloface"))
+_add(ModelSpec("arcface_w600k_r50", "recognizer", "recognition/arcface_w600k_r50.onnx", _ff("models-3.0.0", "arcface_w600k_r50.onnx"),
+               "Non-commercial (InsightFace)", "ArcFace w600k r50", template="arcface_112", size=112))
+_add(ModelSpec("fan_68_5", "landmarker", "detection/fan_68_5.onnx", _ff("models-3.0.0", "fan_68_5.onnx"),
+               "Apache-2.0 (FaceFusion)", "5 to 68 landmark estimator"))
+_add(ModelSpec("fairface", "classifier", "detection/fairface.onnx", _ff("models-3.0.0", "fairface.onnx"),
+               "CC BY 4.0 (FairFace)", "FairFace gender / age", template="arcface_112", size=224))
+
+# --- swappers ---------------------------------------------------------------
+_add(ModelSpec("hyperswap_1a_256", "swapper", "swappers/hyperswap_1a_256.onnx", _ff("models-3.3.0", "hyperswap_1a_256.onnx"),
+               "ResearchRAIL (FaceFusion)", "HyperSwap 1A 256", template="arcface_128", size=256, mean=0.5, std=0.5, arch="hyperswap"))
+_add(ModelSpec("hyperswap_1b_256", "swapper", "swappers/hyperswap_1b_256.onnx", _ff("models-3.3.0", "hyperswap_1b_256.onnx"),
+               "ResearchRAIL (FaceFusion)", "HyperSwap 1B 256", template="arcface_128", size=256, mean=0.5, std=0.5, arch="hyperswap"))
+_add(ModelSpec("hyperswap_1c_256", "swapper", "swappers/hyperswap_1c_256.onnx", _ff("models-3.3.0", "hyperswap_1c_256.onnx"),
+               "ResearchRAIL (FaceFusion)", "HyperSwap 1C 256", template="arcface_128", size=256, mean=0.5, std=0.5, arch="hyperswap"))
+_add(ModelSpec("inswapper_128", "swapper", "swappers/inswapper_128.onnx", _ff("models-3.0.0", "inswapper_128.onnx"),
+               "Non-commercial (InsightFace)", "inswapper 128", template="arcface_128", size=128, arch="inswapper"))
+_add(ModelSpec("inswapper_128_fp16", "swapper", "swappers/inswapper_128_fp16.onnx", _ff("models-3.0.0", "inswapper_128_fp16.onnx"),
+               "Non-commercial (InsightFace)", "inswapper 128 fp16", template="arcface_128", size=128, arch="inswapper"))
+_add(ModelSpec("reswapper_128", "swapper", "swappers/reswapper_128.onnx", (_REACTOR_HF.format(file="reswapper_128.onnx"),),
+               "Non-commercial (ReSwapper)", "ReSwapper 128", template="arcface_128", size=128, arch="inswapper"))
+_add(ModelSpec("reswapper_256", "swapper", "swappers/reswapper_256.onnx", (_REACTOR_HF.format(file="reswapper_256.onnx"),),
+               "Non-commercial (ReSwapper)", "ReSwapper 256", template="arcface_128", size=256, arch="inswapper"))
+
+_add(ModelSpec("simswap_256", "swapper", "swappers/simswap_256.onnx", _ff("models-3.0.0", "simswap_256.onnx"),
+               "Non-commercial (SimSwap)", "SimSwap 256", template="arcface_112_v1", size=256, arch="simswap",
+               extra={"converter": "crossface_simswap", "mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}))
+_add(ModelSpec("simswap_unofficial_512", "swapper", "swappers/simswap_unofficial_512.onnx", _ff("models-3.0.0", "simswap_unofficial_512.onnx"),
+               "Non-commercial (SimSwap)", "SimSwap 512 (unofficial)", template="arcface_112_v1", size=512, arch="simswap",
+               extra={"converter": "crossface_simswap"}))
+_add(ModelSpec("ghost_1_256", "swapper", "swappers/ghost_1_256.onnx", _ff("models-3.0.0", "ghost_1_256.onnx"),
+               "Apache-2.0 (GHOST, ai-forever)", "GHOST 1 256", template="arcface_112_v1", size=256, mean=0.5, std=0.5, arch="ghost",
+               extra={"converter": "crossface_ghost"}))
+_add(ModelSpec("ghost_2_256", "swapper", "swappers/ghost_2_256.onnx", _ff("models-3.0.0", "ghost_2_256.onnx"),
+               "Apache-2.0 (GHOST, ai-forever)", "GHOST 2 256", template="arcface_112_v1", size=256, mean=0.5, std=0.5, arch="ghost",
+               extra={"converter": "crossface_ghost"}))
+_add(ModelSpec("ghost_3_256", "swapper", "swappers/ghost_3_256.onnx", _ff("models-3.0.0", "ghost_3_256.onnx"),
+               "Apache-2.0 (GHOST, ai-forever)", "GHOST 3 256", template="arcface_112_v1", size=256, mean=0.5, std=0.5, arch="ghost",
+               extra={"converter": "crossface_ghost"}))
+_add(ModelSpec("hififace_unofficial_256", "swapper", "swappers/hififace_unofficial_256.onnx", _ff("models-3.1.0", "hififace_unofficial_256.onnx"),
+               "Unknown (HiFiFace, unofficial port)", "HiFiFace 256 (unofficial)", template="mtcnn_512", size=256, mean=0.5, std=0.5,
+               arch="hififace", extra={"converter": "crossface_hififace"}))
+_add(ModelSpec("alphaface_256", "swapper", "swappers/alphaface_256.onnx", _ff("models-3.9.0", "alphaface_256.onnx"),
+               "Non-commercial (AlphaFace)", "AlphaFace 256", template="arcface_128", size=256, arch="alphaface"))
+
+# identity converters: ArcFace embedding -> the identity space a swapper was trained on
+for _name in ("ghost", "simswap", "hififace"):
+    _add(ModelSpec(f"crossface_{_name}", "converter", f"convert/crossface_{_name}.onnx", _ff("models-3.4.0", f"crossface_{_name}.onnx"),
+                   "FaceFusion (see upstream terms)", f"CrossFace {_name}"))
+
+# --- content safety (optional SFW filter) -------------------------------------
+_add(ModelSpec("nsfw_1", "safety", "safety/nsfw_1.onnx", _ff("models-3.3.0", "nsfw_1.onnx"), "see FaceFusion", "NSFW detector 1", size=640,
+               extra={"mean": (0.0, 0.0, 0.0), "std": (1.0, 1.0, 1.0)}))
+_add(ModelSpec("nsfw_2", "safety", "safety/nsfw_2.onnx", _ff("models-3.3.0", "nsfw_2.onnx"), "see FaceFusion", "NSFW classifier 2", size=384,
+               extra={"mean": (0.5, 0.5, 0.5), "std": (0.5, 0.5, 0.5)}))
+_add(ModelSpec("nsfw_3", "safety", "safety/nsfw_3.onnx", _ff("models-3.3.0", "nsfw_3.onnx"), "see FaceFusion", "NSFW classifier 3", size=448,
+               extra={"mean": (0.48145466, 0.4578275, 0.40821073), "std": (0.26862954, 0.26130258, 0.27577711)}))
+
+# --- restorers --------------------------------------------------------------
+_add(ModelSpec("gfpgan_1.4", "restorer", "restorers/gfpgan_1.4.onnx", _ff("models-3.0.0", "gfpgan_1.4.onnx"),
+               "Apache-2.0 (TencentARC)", "GFPGAN 1.4", template="ffhq_512", size=512))
+_add(ModelSpec("codeformer", "restorer", "restorers/codeformer.onnx", _ff("models-3.0.0", "codeformer.onnx"),
+               "S-Lab 1.0 (non-commercial)", "CodeFormer", template="ffhq_512", size=512))
+_add(ModelSpec("gpen_bfr_256", "restorer", "restorers/gpen_bfr_256.onnx", _ff("models-3.0.0", "gpen_bfr_256.onnx"),
+               "Non-commercial (GPEN)", "GPEN-BFR 256", template="arcface_128", size=256))
+_add(ModelSpec("gpen_bfr_512", "restorer", "restorers/gpen_bfr_512.onnx", _ff("models-3.0.0", "gpen_bfr_512.onnx"),
+               "Non-commercial (GPEN)", "GPEN-BFR 512", template="ffhq_512", size=512))
+_add(ModelSpec("gpen_bfr_1024", "restorer", "restorers/gpen_bfr_1024.onnx", _ff("models-3.0.0", "gpen_bfr_1024.onnx"),
+               "Non-commercial (GPEN)", "GPEN-BFR 1024", template="ffhq_512", size=1024))
+_add(ModelSpec("gpen_bfr_2048", "restorer", "restorers/gpen_bfr_2048.onnx", _ff("models-3.0.0", "gpen_bfr_2048.onnx"),
+               "Non-commercial (GPEN)", "GPEN-BFR 2048", template="ffhq_512", size=2048))
+_add(ModelSpec("restoreformer_plus_plus", "restorer", "restorers/restoreformer_plus_plus.onnx", _ff("models-3.0.0", "restoreformer_plus_plus.onnx"),
+               "Apache-2.0 (RestoreFormer++)", "RestoreFormer++", template="ffhq_512", size=512))
+
+# --- masks ------------------------------------------------------------------
+_add(ModelSpec("xseg_1", "occluder", "masks/xseg_1.onnx", _ff("models-3.1.0", "xseg_1.onnx"),
+               "GPL-3.0 (DeepFaceLab XSeg)", "XSeg 1", size=256))
+_add(ModelSpec("xseg_2", "occluder", "masks/xseg_2.onnx", _ff("models-3.1.0", "xseg_2.onnx"),
+               "GPL-3.0 (DeepFaceLab XSeg)", "XSeg 2", size=256))
+_add(ModelSpec("bisenet_resnet_34", "parser", "masks/bisenet_resnet_34.onnx", _ff("models-3.0.0", "bisenet_resnet_34.onnx"),
+               "MIT (yakhyo face-parsing)", "BiSeNet ResNet-34", size=512))
+_add(ModelSpec("bisenet_resnet_18", "parser", "masks/bisenet_resnet_18.onnx", _ff("models-3.1.0", "bisenet_resnet_18.onnx"),
+               "MIT (yakhyo face-parsing)", "BiSeNet ResNet-18", size=512))
+
+
+def keys_of(kind: str) -> list[str]:
+    return [k for k, s in REGISTRY.items() if s.kind == kind]
+
+
+# --- paths / downloads --------------------------------------------------------
+_models_dir: str | None = None
+_download_lock = threading.Lock()
+allow_download = True
+
+
+def set_models_dir(path: str) -> None:
+    global _models_dir
+    _models_dir = path
+
+
+def models_dir() -> str:
+    if _models_dir:
+        return _models_dir
+    return os.path.join(os.getcwd(), "models", "visage")
+
+
+def local_path(key: str) -> str:
+    return os.path.join(models_dir(), *REGISTRY[key].file.split("/"))
+
+
+def is_downloaded(key: str) -> bool:
+    return os.path.isfile(local_path(key))
+
+
+class ModelUnavailable(RuntimeError):
+    pass
+
+
+def ensure(key: str, progress=None) -> str:
+    """Return the local path of `key`, downloading it first when allowed."""
+    if key not in REGISTRY:
+        raise ModelUnavailable(f"Unknown model '{key}'")
+    path = local_path(key)
+    if os.path.isfile(path):
+        return path
+    if not allow_download:
+        raise ModelUnavailable(f"Model '{key}' is missing at {path} and automatic downloads are disabled")
+
+    with _download_lock:
+        if os.path.isfile(path):
+            return path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        errors = []
+        for url in REGISTRY[key].urls:
+            try:
+                _download(url, path, progress, MODEL_HASHES.get(key))
+                return path
+            except Exception as e:  # try the next mirror
+                errors.append(f"{url}: {e}")
+        raise ModelUnavailable(f"Could not download '{key}':\n  " + "\n  ".join(errors))
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 22), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify(key: str) -> bool | None:
+    """True / False against the pinned SHA-256; None when the model is missing or has no pinned hash."""
+    path = local_path(key)
+    expected = MODEL_HASHES.get(key)
+    if not os.path.isfile(path) or expected is None:
+        return None
+    return os.path.getsize(path) == expected[1] and _sha256(path) == expected[0]
+
+
+def _download(url: str, path: str, progress=None, expected: tuple[str, int] | None = None) -> None:
+    part = path + ".part"
+    name = os.path.basename(path)
+    req = urllib.request.Request(url, headers={"User-Agent": "visage-forge-neo"})
+    print(f"[Visage] Downloading {name} ...")
+    try:
+        digest = hashlib.sha256()
+        with urllib.request.urlopen(req, timeout=60) as resp, open(part, "wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = 0
+            last = -1
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                out.write(chunk)
+                digest.update(chunk)
+                done += len(chunk)
+                if total:
+                    pct = done * 100 // total
+                    if pct != last and pct % 10 == 0:
+                        print(f"[Visage]   {name}: {pct}% of {total >> 20} MB")
+                        last = pct
+                    if progress is not None:
+                        progress(done / total, desc=f"Downloading {name}")
+        if total and done != total:
+            raise IOError(f"incomplete download ({done} of {total} bytes)")
+        if expected is not None and (digest.hexdigest() != expected[0] or done != expected[1]):
+            raise IOError(f"SHA-256 mismatch for {name}: got {digest.hexdigest()[:12]}..., expected {expected[0][:12]}...")
+        os.replace(part, path)
+    finally:
+        if os.path.exists(part):
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+
+
+def delete(key: str) -> None:
+    path = local_path(key)
+    if os.path.isfile(path):
+        os.remove(path)
+
+
+def disk_usage() -> int:
+    root = models_dir()
+    total = 0
+    for base, _, files in os.walk(root):
+        for f in files:
+            total += os.path.getsize(os.path.join(base, f))
+    return total
+
+
+__all__ = ["REGISTRY", "ModelSpec", "ModelUnavailable", "ensure", "keys_of", "local_path", "is_downloaded",
+           "set_models_dir", "models_dir"]

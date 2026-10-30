@@ -1,0 +1,17 @@
+# AI_Visage - Dependances principales
+
+# Calcul numerique et traitement d'images
+numpy
+opencv-python
+Pillow
+
+# Moteur ONNX avec acceleration NVIDIA CUDA 13
+onnxruntime-gpu[cuda,cudnn]
+
+# Serveur Web
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Configuration
+python-dotenv
